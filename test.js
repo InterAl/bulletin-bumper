@@ -3,5 +3,5 @@
 //var res = wwj.jump();
 
 var Yad2Jumper = require('./yad2-jumper.js');
-var yad2j = new Yad2Jumper("interal@gmail.com", "zdaoy");
+var yad2j = new Yad2Jumper("nachshon6@gmail.com", "schlachet1918");
 var res = yad2j.jump();

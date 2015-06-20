@@ -3,6 +3,7 @@ var Q = require("q");
 var cheerio = require("cheerio");
 var toughCookie = require("tough-cookie");
 var inspect = require("util").inspect;
+var url = require("url");
 var _ = require("lodash");
 
 function Jumper(username, password) {
@@ -22,21 +23,32 @@ function Jumper(username, password) {
             return that.getAllPostedMessages(url);
           }));
         })
-        .then(function(detailUrls) {
-          var tasks = detailUrls.map(function(i, obj) {
-            return obj.detailUrls.map(function(url, j) {
-              var detailsUrl = "http://my.yad2.co.il/MyYad2/MyOrder/" + url;
-              return that.getOrderId(detailsUrl, obj.referer)
-                .then(function(orderId) {
-                  return that.jumpMessage(detailsUrl, orderId);
-                });
-            });
+        .then(function (urls) {
+          urls = _.flatten(urls.map(function(i, u) { return u.detailUrls; }));
+          var nadlanTasks = urls.map(function(u) {
+            var qs = url.parse(u, true).query;
+            var nadlanId = qs["NadlanID"];
+            return nadlanId;
+          }).map(function(nadlanId) {
+            return that.jumpNadlanMethod(nadlanId);
           });
-
-          tasks = _.flatten(tasks);
-
-          return Q.all(tasks);
+          return Q.all(nadlanTasks);
         })
+//        .then(function(detailUrls) {
+//          var tasks = detailUrls.map(function(i, obj) {
+//            return obj.detailUrls.map(function(url, j) {
+//              var detailsUrl = "http://my.yad2.co.il/MyYad2/MyOrder/" + url;
+//              return that.getOrderId(detailsUrl, "http://my.yad2.co.il/MyYad2/MyOrder/rent.php"/*obj.referer*/)
+//                .then(function(orderId) {
+//                  return that.jumpMessage(detailsUrl, orderId);
+//                });
+//            });
+//          });
+//
+//          tasks = _.flatten(tasks);
+//
+//          return Q.all(tasks);
+//        })
         .then (function(messages) {
           console.log("finished jumping.");
         })
@@ -85,11 +97,11 @@ function Jumper(username, password) {
       }
     ).then(function (res) {
       console.log("fetched", categoryUrl);
-      function extractMessageIds() {
+      function extractMessageUrls() {
         var urls = [];
         var match;
         
-        var pattern = /javascript:show_me\('(.*?)'/g;
+        var pattern = /javascript:show_me\('(.*?=\d+)'/g;
         while ((match = pattern.exec(res.body)) != null) {
           if (match && match.length > 1)
             urls.push(match[1]);
@@ -97,7 +109,8 @@ function Jumper(username, password) {
         return _.uniq(urls);
       }
 
-      return { referer: categoryUrl, detailUrls: extractMessageIds() };
+      var urls = extractMessageUrls();
+      return { referer: categoryUrl, detailUrls: urls };
     });
   };
 
@@ -110,9 +123,22 @@ function Jumper(username, password) {
         }
       }
     ).then(function(res) {
-      var match = /<b>(\d+)<\/b>/gi.exec(res.body);
+      var match = /<b>(\d{5,})<\/b>/gi.exec(res.body);
       if (match && match.length > 1)
         return match[1];
+    });
+  };
+
+  this.jumpNadlanMethod = function (nadlanId) {
+    console.log("jumping nadlan", nadlanId);
+    return sessionRequest({
+      url: "http://my.yad2.co.il/MyYad2/MyOrder/rentDetails.php?Up=2&NadlanID=" + nadlanId,
+      followRedirect: false,
+      headers: { referer: "http://my.yad2.co.il/MyYad2/MyOrder/rentDetails.php?NadlanID=" + nadlanId + "&Up=u" }
+    }).then(function(r) {
+      var success = r.res.statusCode === 200;
+      if (success) console.log("jumped", nadlanId);
+      return success;
     });
   };
 
